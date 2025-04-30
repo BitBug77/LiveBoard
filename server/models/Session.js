@@ -2,40 +2,30 @@
 const mongoose = require('mongoose');
 const crypto = require('crypto');
 
-const sessionSchema = mongoose.Schema(
-  {
-    name: {
-      type: String,
-      required: true,
-    },
-    joinCode: {
-      type: String,
-      unique: true,
-    },
-    host: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: true,
-    },
-    participants: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-      },
-    ],
-    isActive: {
-      type: Boolean,
-      default: true,
-    },
-    boardState: {
-      type: Object,
-      default: {},
-    },
+const mongoose = require('mongoose');
+
+const SessionSchema = new mongoose.Schema({
+  name: String,
+  host: mongoose.Schema.Types.ObjectId,
+  participants: [mongoose.Schema.Types.ObjectId],
+  isActive: { type: Boolean, default: true },
+  joinCode: String,
+  boardState: {
+    type: Object,
+    default: {},
   },
-  {
-    timestamps: true,
-  }
-);
+  history: {
+    type: [Object], // Array of board states
+    default: [],
+  },
+  future: {
+    type: [Object], // For redo
+    default: [],
+  },
+});
+
+module.exports = mongoose.model('Session', SessionSchema);
+
 
 // Generate a unique 6-character join code
 sessionSchema.pre('save', function (next) {

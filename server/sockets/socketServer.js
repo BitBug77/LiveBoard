@@ -18,6 +18,7 @@ const setupSocketServer = (io) => {
       try {
         const session = await Session.findById(sessionId);
         if (session) {
+          // Send the entire board state to the joining user
           socket.emit('board_state', session.boardState);
         }
       } catch (error) {
@@ -45,7 +46,41 @@ const setupSocketServer = (io) => {
       // Update board state in database
       updateBoardState(sessionId, 'text', textData);
     });
-
+    socket.on('undo', async ({ sessionId }) => {
+      try {
+        const session = await Session.findById(sessionId);
+        if (!session || session.history.length === 0) return;
+    
+        const lastState = session.history.pop();
+        session.future.push(JSON.parse(JSON.stringify(session.boardState))); // Save current to future
+        session.boardState = lastState;
+    
+        await session.save();
+    
+        // Emit new state to all users
+        io.to(sessionId).emit('board_state', session.boardState);
+      } catch (err) {
+        console.error('Undo failed:', err);
+      }
+    });
+    
+    socket.on('redo', async ({ sessionId }) => {
+      try {
+        const session = await Session.findById(sessionId);
+        if (!session || session.future.length === 0) return;
+    
+        const nextState = session.future.pop();
+        session.history.push(JSON.parse(JSON.stringify(session.boardState))); // Save current to history
+        session.boardState = nextState;
+    
+        await session.save();
+    
+        io.to(sessionId).emit('board_state', session.boardState);
+      } catch (err) {
+        console.error('Redo failed:', err);
+      }
+    });
+    
     // Handle disconnection
     socket.on('disconnect', () => {
       console.log(`User disconnected: ${socket.id}`);
@@ -53,27 +88,31 @@ const setupSocketServer = (io) => {
   });
 };
 
-// Helper function to update board state in database
 const updateBoardState = async (sessionId, type, data) => {
   try {
     const session = await Session.findById(sessionId);
-    if (session) {
-      // Update specific part of board state based on type
-      if (!session.boardState) session.boardState = {};
-      
-      if (type === 'draw') {
-        if (!session.boardState.drawings) session.boardState.drawings = [];
-        session.boardState.drawings.push(data);
-      } else if (type === 'text') {
-        if (!session.boardState.texts) session.boardState.texts = {};
-        session.boardState.texts[data.id] = data;
-      }
-      
-      await session.save();
+    if (!session) return;
+
+    if (!session.boardState) session.boardState = {};
+    const currentState = JSON.parse(JSON.stringify(session.boardState)); // Deep copy
+
+    // Save current state to history before making changes
+    session.history.push(currentState);
+    session.future = []; // Clear future stack on new action
+
+    if (type === 'draw') {
+      if (!session.boardState.drawings) session.boardState.drawings = [];
+      session.boardState.drawings.push(data);
+    } else if (type === 'text') {
+      if (!session.boardState.texts) session.boardState.texts = {};
+      session.boardState.texts[data.id] = data;
     }
+
+    await session.save();
   } catch (error) {
     console.error('Error updating board state:', error);
   }
 };
+
 
 module.exports = setupSocketServer;
