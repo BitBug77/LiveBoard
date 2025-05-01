@@ -2,7 +2,7 @@
 const mongoose = require('mongoose');
 const crypto = require('crypto');
 
-const mongoose = require('mongoose');
+
 
 const SessionSchema = new mongoose.Schema({
   name: String,
@@ -28,7 +28,7 @@ module.exports = mongoose.model('Session', SessionSchema);
 
 
 // Generate a unique 6-character join code
-sessionSchema.pre('save', function (next) {
+SessionSchema.pre('save', function (next) {
   if (!this.joinCode) {
     // Generate a random 6-character alphanumeric code
     this.joinCode = crypto.randomBytes(3).toString('hex').toUpperCase();
@@ -36,5 +36,5 @@ sessionSchema.pre('save', function (next) {
   next();
 });
 
-const Session = mongoose.model('Session', sessionSchema);
+const Session = mongoose.model('Session', SessionSchema);
 module.exports = Session;

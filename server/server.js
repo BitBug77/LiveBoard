@@ -5,7 +5,6 @@ const { Server } = require('socket.io');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const connectDB = require('./config/db');
-const setupSocketServer = require('./sockets/socketServer');
 
 // Load environment variables
 dotenv.config();
@@ -21,8 +20,20 @@ app.use(cors());
 app.use(express.json());
 
 // Routes
-app.use('/api/auth', require('./api/auth/routes'));
-app.use('/api/rooms', require('./api/rooms/routes'));
+try {
+  app.use('/api/auth', require('./api/auth/routes'));
+  console.log('Auth routes loaded successfully');
+} catch (error) {
+  console.error('Error loading auth routes:', error.message);
+  console.log('Make sure you have ./api/auth/routes.js file properly set up');
+}
+
+try {
+  app.use('/api/rooms', require('./api/rooms/routes'));
+  console.log('Room routes loaded successfully');
+} catch (error) {
+  console.error('Error loading room routes:', error.message);
+}
 
 // Create HTTP server
 const server = http.createServer(app);
@@ -36,7 +47,9 @@ const io = new Server(server, {
 });
 
 // Initialize socket server
+const setupSocketServer = require('./sockets/socketServer');
 setupSocketServer(io);
+console.log('Socket.io server initialized');
 
 // Server port
 const PORT = process.env.PORT || 5000;
