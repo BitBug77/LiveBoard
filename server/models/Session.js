@@ -1,10 +1,8 @@
-// models/Session.js
 const mongoose = require('mongoose');
 const crypto = require('crypto');
 
-const mongoose = require('mongoose');
-
-const SessionSchema = new mongoose.Schema({
+// Define the session schema
+const sessionSchema = new mongoose.Schema({
   name: String,
   host: mongoose.Schema.Types.ObjectId,
   participants: [mongoose.Schema.Types.ObjectId],
@@ -24,10 +22,7 @@ const SessionSchema = new mongoose.Schema({
   },
 });
 
-module.exports = mongoose.model('Session', SessionSchema);
-
-
-// Generate a unique 6-character join code
+// Generate a unique 6-character join code before saving the session
 sessionSchema.pre('save', function (next) {
   if (!this.joinCode) {
     // Generate a random 6-character alphanumeric code
@@ -36,5 +31,6 @@ sessionSchema.pre('save', function (next) {
   next();
 });
 
+// Export the session model after the pre-save hook
 const Session = mongoose.model('Session', sessionSchema);
 module.exports = Session;

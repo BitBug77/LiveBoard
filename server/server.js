@@ -23,6 +23,7 @@ app.use(express.json());
 // Routes
 app.use('/api/auth', require('./api/auth/routes'));
 app.use('/api/rooms', require('./api/rooms/routes'));
+app.use('/api/board', require('./api/board/getboardstate'));
 
 // Create HTTP server
 const server = http.createServer(app);
