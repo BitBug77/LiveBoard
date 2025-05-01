@@ -127,15 +127,15 @@ exports.registerUser = async (req, res) => {
   }
 };
 
-// @desc    Login user
+// @desc    Login user (Modified to use username instead of email)
 // @route   POST /api/auth/login
 // @access  Public
 exports.loginUser = async (req, res) => {
-  const { email, password } = req.body;
+  const { username, password } = req.body;
 
   try {
-    // Find user by email
-    const user = await User.findOne({ email }).select('+password');
+    // Find user by username instead of email
+    const user = await User.findOne({ username }).select('+password');
     
     // Check if user exists
     if (!user) {
