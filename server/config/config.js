@@ -7,6 +7,7 @@ const config = {
   jwtSecret: process.env.JWT_SECRET || 'your-default-jwt-secret',
   jwtExpire: process.env.JWT_EXPIRE || '30d',
   clientUrl: process.env.CLIENT_URL || 'http://localhost:3000',
+  serverUrl: process.env.SERVER_URL || 'http://localhost:5000', 
   
   // Email configuration
   email: {

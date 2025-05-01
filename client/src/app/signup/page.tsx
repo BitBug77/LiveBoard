@@ -104,14 +104,14 @@ export default function SignupForm() {
       });
       
       const data = await response.json();
-      
+      console.log(data);
       if (!response.ok) {
         throw new Error(data.message || 'Registration failed');
       }
       
       // Save token to local storage
-      if (data.token) {
-        localStorage.setItem('authToken', data.token);
+      if (data.accessToken) {
+        localStorage.setItem('authToken', data.accessToken);
         setSuccess(true);
         
         // You could redirect the user here or show a success message
@@ -145,7 +145,7 @@ export default function SignupForm() {
         {success && (
           <div className="mb-4 p-3 bg-green-100 border border-green-300 text-green-700 rounded-lg flex items-center">
             <CheckCircle size={18} className="mr-2" />
-            <span>Registration successful! You're now logged in.</span>
+            <span>Registration successful! verify your email.</span>
           </div>
         )}
         
