@@ -46,6 +46,7 @@ exports.registerUser = async (req, res) => {
     // Save the user
     await user.save();
     console.log('User created with ID:', user._id);
+    console.log('User verification token stored:', verificationToken);
 
     // Generate tokens
     const accessToken = generateAccessToken(user._id);
@@ -56,26 +57,23 @@ exports.registerUser = async (req, res) => {
     await user.save();
     console.log('Refresh token stored in user document');
 
-    // Create verification URL
+    // Create verification URL - make sure the token is properly included
     const verificationUrl = `${config.clientUrl}/verify-email/${verificationToken}`;
     
-    console.log('Config values:', {
-      clientUrl: config.clientUrl,
-      emailUser: config.email.user,
-      emailFrom: config.email.from,
-      hasEmailPass: !!config.email.password
-    });
+    // Debug logging to verify URL and token
+    console.log('Config client URL:', config.clientUrl);
+    console.log('Full verification URL:', verificationUrl);
+    console.log('Token in URL:', verificationToken);
 
-    // Log the verification URL for debugging
-    console.log('Verification URL:', verificationUrl);
-
-    // Email content
+    // Email content with improved HTML formatting and explicit token display
     const emailContent = `
       <h1>Email Verification</h1>
       <p>Hello ${username},</p>
       <p>Thank you for registering with our application. Please verify your email by clicking the link below:</p>
-      <a href="${verificationUrl}">Verify Your Email</a>
+      <p><a href="${verificationUrl}" style="display: inline-block; background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px;">Verify Your Email</a></p>
       <p>This link is valid for 24 hours.</p>
+      <p>If you can't click the button above, copy and paste the following URL into your browser:</p>
+      <p>${verificationUrl}</p>
       <p>If you did not register for an account, please ignore this email.</p>
     `;
 
@@ -245,7 +243,7 @@ exports.resendVerificationEmail = async (req, res) => {
 
     // Generate new verification token
     const verificationToken = crypto.randomBytes(20).toString('hex');
-    console.log('Generated new verification token');
+    console.log('Generated new verification token:', verificationToken);
     
     // Set token expiry (24 hours from now)
     const verificationTokenExpiry = Date.now() + 24 * 60 * 60 * 1000;
@@ -254,19 +252,21 @@ exports.resendVerificationEmail = async (req, res) => {
     user.verificationToken = verificationToken;
     user.verificationTokenExpiry = verificationTokenExpiry;
     await user.save();
-    console.log('Updated user with new verification token');
+    console.log('Updated user with new verification token:', verificationToken);
 
-    // Create verification URL
+    // Create verification URL with explicit token
     const verificationUrl = `${config.clientUrl}/verify-email/${verificationToken}`;
     console.log('New verification URL:', verificationUrl);
 
-    // Email content
+    // Email content with improved HTML formatting and explicit token display
     const emailContent = `
       <h1>Email Verification</h1>
       <p>Hello ${user.username},</p>
       <p>You requested to resend the verification email. Please verify your email by clicking the link below:</p>
-      <a href="${verificationUrl}">Verify Your Email</a>
+      <p><a href="${verificationUrl}" style="display: inline-block; background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px;">Verify Your Email</a></p>
       <p>This link is valid for 24 hours.</p>
+      <p>If you can't click the button above, copy and paste the following URL into your browser:</p>
+      <p>${verificationUrl}</p>
       <p>If you did not register for an account, please ignore this email.</p>
     `;
 
@@ -376,7 +376,7 @@ exports.forgotPassword = async (req, res) => {
 
     // Generate reset token
     const resetToken = crypto.randomBytes(20).toString('hex');
-    console.log('Generated password reset token');
+    console.log('Generated password reset token:', resetToken);
     
     // Hash token and set to resetPasswordToken field
     user.resetPasswordToken = crypto
@@ -391,17 +391,19 @@ exports.forgotPassword = async (req, res) => {
     await user.save();
     console.log('Updated user with reset token');
 
-    // Create reset URL
+    // Create reset URL with explicit token
     const resetUrl = `${config.clientUrl}/reset-password/${resetToken}`;
-    console.log('Reset URL:', resetUrl);
+    console.log('Reset URL with token:', resetUrl);
 
-    // Email content
+    // Email content with improved HTML formatting and explicit token display
     const emailContent = `
       <h1>Password Reset</h1>
       <p>Hello ${user.username},</p>
       <p>You requested to reset your password. Please click the link below to reset your password:</p>
-      <a href="${resetUrl}">Reset Password</a>
+      <p><a href="${resetUrl}" style="display: inline-block; background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px;">Reset Password</a></p>
       <p>This link is valid for 10 minutes.</p>
+      <p>If you can't click the button above, copy and paste the following URL into your browser:</p>
+      <p>${resetUrl}</p>
       <p>If you did not request a password reset, please ignore this email.</p>
     `;
 
@@ -442,7 +444,7 @@ exports.resetPassword = async (req, res) => {
   try {
     // Get token from params
     const { token } = req.params;
-    console.log('Password reset attempt with token');
+    console.log('Password reset attempt with token:', token);
     
     // Get hashed token
     const resetPasswordToken = crypto
@@ -493,5 +495,50 @@ exports.resetPassword = async (req, res) => {
   } catch (error) {
     console.error('Reset password error:', error);
     res.status(500).json({ message: 'Server error during reset password', error: error.message });
+  }
+};
+
+// @desc    Get verification link (DEVELOPMENT ONLY)
+// @route   GET /api/auth/dev/get-verification/:email
+// @access  Public (but should be restricted to development environment)
+exports.getVerificationLink = async (req, res) => {
+  // Check if in development environment
+  if (process.env.NODE_ENV !== 'development') {
+    return res.status(404).json({ message: 'Endpoint not found' });
+  }
+
+  try {
+    const { email } = req.params;
+    
+    // Find user by email
+    const user = await User.findOne({ email });
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    if (user.isVerified) {
+      return res.status(400).json({ message: 'User is already verified' });
+    }
+    
+    if (!user.verificationToken || !user.verificationTokenExpiry) {
+      return res.status(400).json({ message: 'No verification pending for this user' });
+    }
+    
+    // Create verification URL
+    const verificationUrl = `${config.clientUrl}/verify-email/${user.verificationToken}`;
+    
+    // Return verification info
+    return res.status(200).json({
+      message: 'Verification info retrieved successfully',
+      verificationInfo: {
+        token: user.verificationToken,
+        url: verificationUrl,
+        expires: user.verificationTokenExpiry
+      }
+    });
+  } catch (error) {
+    console.error('Get verification link error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };

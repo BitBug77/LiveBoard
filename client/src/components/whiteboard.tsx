@@ -1,6 +1,8 @@
-'use client';
+"use client"
+
 import type React from "react"
-import { io } from 'socket.io-client';
+
+import { io } from "socket.io-client"
 import { useState, useRef, useEffect } from "react"
 import {
   Pencil,
@@ -9,7 +11,6 @@ import {
   Users,
   Circle,
   MousePointer,
-  ChevronDown,
   Download,
   ZoomIn,
   ZoomOut,
@@ -31,19 +32,32 @@ type DrawingElement = {
   text?: string
   color: string
   thickness?: number
+  _id?: string
+  timestamp?: string
 }
 
-// Establish socket connection outside component to avoid recreation on renders
-const socket = io('http://localhost:5000', {
+type BoardData = {
+  drawings: DrawingElement[]
+  texts: any[]
+  lastUpdated: string
+}
+
+interface WhiteboardProps {
+  initialBoardData: BoardData | null
+  roomCode: string
+}
+
+// Create socket outside component to avoid recreation on renders
+const socket = io("http://localhost:5000", {
   reconnection: true,
   reconnectionAttempts: 5,
   reconnectionDelay: 1000,
-  transports: ['websocket'], // Try forcing websocket transport
-  forceNew: false, // Don't force a new connection every time
-  autoConnect: true // Connect automatically
-});
+  transports: ["websocket"],
+  forceNew: false,
+  autoConnect: true,
+})
 
-export default function Whiteboard() {
+export default function Whiteboard({ initialBoardData, roomCode }: WhiteboardProps) {
   const [tool, setTool] = useState<Tool>("select")
   const [color, setColor] = useState("#000000")
   const [isDrawing, setIsDrawing] = useState(false)
@@ -51,190 +65,257 @@ export default function Whiteboard() {
   const [currentElement, setCurrentElement] = useState<DrawingElement | null>(null)
   const [zoom, setZoom] = useState(100)
   const canvasRef = useRef<HTMLDivElement>(null)
-  const [title, setTitle] = useState("Customer Journey Map")
-  const [joinLink, setJoinLink] = useState('')
-  const [sessionId, setSessionId] = useState('')
-  const [userId, setUserId] = useState('')
+  const [title, setTitle] = useState("Whiteboard")
+  const [joinLink, setJoinLink] = useState("")
+  const [sessionId, setSessionId] = useState("")
+  const [userId, setUserId] = useState("")
   const [socketConnected, setSocketConnected] = useState(false)
   const lineWidth = 3
 
-  // Track socket connection status
+  // Initialize board with data from API
+  useEffect(() => {
+    if (initialBoardData) {
+      const processedElements: DrawingElement[] = []
+
+      // Process drawings
+      if (initialBoardData.drawings && Array.isArray(initialBoardData.drawings)) {
+        initialBoardData.drawings.forEach((drawing) => {
+          processedElements.push({
+            ...drawing,
+            type: (drawing.type as Tool) || "pen",
+            color: drawing.color || "#000000",
+          })
+        })
+      }
+
+      // Process texts if they exist
+      if (initialBoardData.texts && Array.isArray(initialBoardData.texts)) {
+        initialBoardData.texts.forEach((text) => {
+          processedElements.push({
+            id: text._id,
+            type: "text",
+            startX: text.startX || text.x,
+            startY: text.startY || text.y,
+            text: text.content || text.text,
+            color: text.color || "#000000",
+          })
+        })
+      }
+
+      setElements(processedElements)
+    }
+  }, [initialBoardData])
+
+  // Set up socket connection
   useEffect(() => {
     // Make sure socket is connected when component mounts
     if (!socket.connected) {
-      socket.connect();
+      socket.connect()
     }
-    
+
     function onConnect() {
-      console.log('Connected to socket server');
-      setSocketConnected(true);
-      
-      // If we already have a session ID, join it on reconnect
-      if (sessionId && userId) {
-        socket.emit('join_room', {
-          sessionId,
-          userId
-        });
-        console.log(`Rejoined session ${sessionId} as ${userId}`);
+      console.log("Connected to socket server")
+      setSocketConnected(true)
+
+      // Join the room when connected
+      if (roomCode) {
+        const tempUserId = userId || `user-${Date.now()}`
+        setUserId(tempUserId)
+
+        socket.emit("join_room", {
+          sessionId: roomCode,
+          userId: tempUserId,
+        })
+        console.log(`Joined room ${roomCode} as ${tempUserId}`)
       }
     }
-    
-    function onDisconnect() {
-      console.log('Disconnected from socket server');
-      setSocketConnected(false);
-    }
-    
-    function onConnectError(error: any) {
-      console.error('Socket connection error:', error);
-      setSocketConnected(false);
-    }
-    
-    // Add event listeners
-    socket.on('connect', onConnect);
-    socket.on('disconnect', onDisconnect);
-    socket.on('connect_error', onConnectError);
-    
-    // Set initial connection state
-    setSocketConnected(socket.connected);
-    
-    return () => {
-      socket.off('connect', onConnect);
-      socket.off('disconnect', onDisconnect);
-      socket.off('connect_error', onConnectError);
-    };
-  }, [sessionId, userId]);
 
-  // Connect to socket and handle events
+    function onDisconnect() {
+      console.log("Disconnected from socket server")
+      setSocketConnected(false)
+    }
+
+    function onConnectError(error: any) {
+      console.error("Socket connection error:", error)
+      setSocketConnected(false)
+    }
+
+    // Add event listeners
+    socket.on("connect", onConnect)
+    socket.on("disconnect", onDisconnect)
+    socket.on("connect_error", onConnectError)
+
+    // Set initial connection state
+    setSocketConnected(socket.connected)
+
+    // Set session ID from room code
+    setSessionId(roomCode)
+    setJoinLink(`http://localhost:3000/board/${roomCode}`)
+
+    // If already connected, join the room
+    if (socket.connected && roomCode) {
+      const tempUserId = `user-${Date.now()}`
+      setUserId(tempUserId)
+
+      socket.emit("join_room", {
+        sessionId: roomCode,
+        userId: tempUserId,
+      })
+      console.log(`Joined room ${roomCode} as ${tempUserId}`)
+    }
+
+    return () => {
+      socket.off("connect", onConnect)
+      socket.off("disconnect", onDisconnect)
+      socket.off("connect_error", onConnectError)
+
+      // Leave room when component unmounts
+      if (roomCode && userId && socket.connected) {
+        socket.emit("leave_room", {
+          sessionId: roomCode,
+          userId,
+        })
+      }
+    }
+  }, [roomCode])
+
+  // Handle socket events for real-time updates
   useEffect(() => {
     // Listen for board state updates from server
     function handleBoardState(boardState: any) {
-      console.log('Received board state:', boardState);
-      
+      console.log("Received board state:", boardState)
+
       // Process and set elements from board state
-      const newElements: DrawingElement[] = [];
-      
+      const newElements: DrawingElement[] = []
+
       // Process drawings
       if (boardState.drawings && Array.isArray(boardState.drawings)) {
         boardState.drawings.forEach((drawing: any) => {
           newElements.push({
             ...drawing,
-            type: drawing.type || "pen", // Default to pen if type not specified
+            type: (drawing.type as Tool) || "pen",
             color: drawing.color || "#000000",
-          });
-        });
+          })
+        })
       }
-      
+
       // Process text elements
-      if (boardState.texts && typeof boardState.texts === 'object') {
-        Object.entries(boardState.texts).forEach(([id, textData]: [string, any]) => {
+      if (boardState.texts && Array.isArray(boardState.texts)) {
+        boardState.texts.forEach((textData: any) => {
           newElements.push({
-            id,
+            id: textData.id || textData._id,
             type: "text",
-            startX: textData.x,
-            startY: textData.y,
-            text: textData.content,
+            startX: textData.x || textData.startX,
+            startY: textData.y || textData.startY,
+            text: textData.content || textData.text,
             color: textData.color || "#000000",
-          });
-        });
+          })
+        })
       }
-      
-      setElements(newElements);
+
+      setElements(newElements)
     }
-    
+
     // Listen for new drawings from other users
     function handleDraw(drawData: any) {
-      console.log('Received draw event:', drawData);
-      setElements(prev => [...prev, {
-        ...drawData,
-        type: drawData.type || "pen",
-        color: drawData.color || "#000000",
-      }]);
+      console.log("Received draw event:", drawData)
+      setElements((prev) => [
+        ...prev,
+        {
+          ...drawData,
+          type: (drawData.type as Tool) || "pen",
+          color: drawData.color || "#000000",
+        },
+      ])
     }
-    
+
     // Listen for text updates from other users
     function handleText(textData: any) {
-      console.log('Received text event:', textData);
-      setElements(prev => [...prev, {
-        id: textData.id,
-        type: "text",
-        startX: textData.x,
-        startY: textData.y,
-        text: textData.content,
-        color: textData.color || "#000000",
-      }]);
+      console.log("Received text event:", textData)
+      setElements((prev) => [
+        ...prev,
+        {
+          id: textData.id,
+          type: "text",
+          startX: textData.x,
+          startY: textData.y,
+          text: textData.content,
+          color: textData.color || "#000000",
+        },
+      ])
     }
-    
+
     // Listen for errors
     function handleError(error: any) {
-      console.error('Socket error:', error);
-      alert(`Error: ${error.message}`);
+      console.error("Socket error:", error)
+      alert(`Error: ${error.message}`)
     }
-    
+
     // Listen for user joined events
     function handleUserJoined(data: { userId: string }) {
-      console.log(`User ${data.userId} joined the session`);
+      console.log(`User ${data.userId} joined the session`)
       // You could show a notification or update UI here
     }
-    
+
     // Add event listeners
-    socket.on('board_state', handleBoardState);
-    socket.on('draw', handleDraw);
-    socket.on('text', handleText);
-    socket.on('error', handleError);
-    socket.on('user_joined', handleUserJoined);
-    
+    socket.on("board_state", handleBoardState)
+    socket.on("draw", handleDraw)
+    socket.on("text", handleText)
+    socket.on("error", handleError)
+    socket.on("user_joined", handleUserJoined)
+
     return () => {
       // Clean up socket listeners
-      socket.off('board_state', handleBoardState);
-      socket.off('draw', handleDraw);
-      socket.off('text', handleText);
-      socket.off('error', handleError);
-      socket.off('user_joined', handleUserJoined);
-    };
-  }, []);
+      socket.off("board_state", handleBoardState)
+      socket.off("draw", handleDraw)
+      socket.off("text", handleText)
+      socket.off("error", handleError)
+      socket.off("user_joined", handleUserJoined)
+    }
+  }, [])
 
   // Track cursor position and emit to others - using debounce to reduce network traffic
-  const cursorMoveTimeoutRef = useRef<number | null>(null);
-  
+  const cursorMoveTimeoutRef = useRef<number | null>(null)
+
   const handleCursorMove = (e: React.MouseEvent) => {
-    if (!canvasRef.current || !sessionId || !userId) return;
-    
+    if (!canvasRef.current || !sessionId || !userId) return
+
     // Clear previous timeout
     if (cursorMoveTimeoutRef.current) {
-      window.clearTimeout(cursorMoveTimeoutRef.current);
+      window.clearTimeout(cursorMoveTimeoutRef.current)
     }
-    
+
     // Set new timeout for debounce (60ms for smooth cursor movement)
     cursorMoveTimeoutRef.current = window.setTimeout(() => {
       if (!socket.connected) {
-        console.warn('Socket not connected, cursor position not sent');
-        return;
+        console.warn("Socket not connected, cursor position not sent")
+        return
       }
-      
-      const rect = canvasRef.current!.getBoundingClientRect();
-      const x = (e.clientX - rect.left) / (zoom / 100);
-      const y = (e.clientY - rect.top) / (zoom / 100);
-      
-      socket.emit('cursor', {
+
+      const rect = canvasRef.current!.getBoundingClientRect()
+      const x = (e.clientX - rect.left) / (zoom / 100)
+      const y = (e.clientY - rect.top) / (zoom / 100)
+
+      socket.emit("cursor", {
         sessionId,
         cursorData: {
           userId,
           x,
-          y
-        }
-      });
-    }, 60);
-  };
+          y,
+        },
+      })
+    }, 60)
+  }
 
   // Handle mouse down for drawing
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (!canvasRef.current) return;
+    if (!canvasRef.current) return
 
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / (zoom / 100);
-    const y = (e.clientY - rect.top) / (zoom / 100);
+    const rect = canvasRef.current.getBoundingClientRect()
+    const x = (e.clientX - rect.left) / (zoom / 100)
+    const y = (e.clientY - rect.top) / (zoom / 100)
 
-    setIsDrawing(true);
+    setIsDrawing(true)
 
     if (tool === "pen") {
       const newElement: DrawingElement = {
@@ -242,8 +323,8 @@ export default function Whiteboard() {
         points: [{ x, y }],
         color,
         thickness: lineWidth,
-      };
-      setCurrentElement(newElement);
+      }
+      setCurrentElement(newElement)
     } else if (tool === "square" || tool === "circle") {
       const newElement: DrawingElement = {
         type: tool,
@@ -252,12 +333,12 @@ export default function Whiteboard() {
         endX: x,
         endY: y,
         color,
-      };
-      setCurrentElement(newElement);
+      }
+      setCurrentElement(newElement)
     } else if (tool === "text") {
-      const text = prompt("Enter text:");
+      const text = prompt("Enter text:")
       if (text) {
-        const textId = `text-${Date.now()}`;
+        const textId = `text-${Date.now()}`
         const newElement: DrawingElement = {
           id: textId,
           type: "text",
@@ -265,20 +346,20 @@ export default function Whiteboard() {
           startY: y,
           text,
           color,
-        };
-        
+        }
+
         // Add to local state
-        setElements([...elements, newElement]);
-        
+        setElements([...elements, newElement])
+
         // Check socket connection before emitting
         if (!socket.connected) {
-          console.warn('Socket not connected, text not sent to server');
-          return;
+          console.warn("Socket not connected, text not sent to server")
+          return
         }
-        
+
         // Emit text event to server
         if (sessionId) {
-          console.log('Emitting text event:', {
+          console.log("Emitting text event:", {
             sessionId,
             textData: {
               id: textId,
@@ -286,10 +367,10 @@ export default function Whiteboard() {
               x: newElement.startX,
               y: newElement.startY,
               color: newElement.color,
-            }
-          });
-          
-          socket.emit('text', {
+            },
+          })
+
+          socket.emit("text", {
             sessionId,
             textData: {
               id: textId,
@@ -297,71 +378,71 @@ export default function Whiteboard() {
               x: newElement.startX,
               y: newElement.startY,
               color: newElement.color,
-            }
-          });
+            },
+          })
         } else {
-          console.warn('Not emitting text event - no session ID');
+          console.warn("Not emitting text event - no session ID")
         }
       }
     }
-  };
+  }
 
   const handleMouseMove = (e: React.MouseEvent) => {
     // Handle cursor tracking for all users
-    handleCursorMove(e);
-    
-    if (!isDrawing || !canvasRef.current || !currentElement) return;
+    handleCursorMove(e)
 
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / (zoom / 100);
-    const y = (e.clientY - rect.top) / (zoom / 100);
+    if (!isDrawing || !canvasRef.current || !currentElement) return
+
+    const rect = canvasRef.current.getBoundingClientRect()
+    const x = (e.clientX - rect.left) / (zoom / 100)
+    const y = (e.clientY - rect.top) / (zoom / 100)
 
     if (tool === "pen") {
       setCurrentElement({
         ...currentElement,
         points: [...(currentElement.points || []), { x, y }],
-      });
+      })
     } else if (tool === "square" || tool === "circle") {
       setCurrentElement({
         ...currentElement,
         endX: x,
         endY: y,
-      });
+      })
     }
-  };
+  }
 
   const handleMouseUp = () => {
     if (isDrawing && currentElement) {
       // Add the current element to local state
-      setElements([...elements, currentElement]);
-      
+      setElements([...elements, currentElement])
+
       // Check socket connection before emitting
       if (!socket.connected) {
-        console.warn('Socket not connected, drawing not sent to server');
-        setIsDrawing(false);
-        setCurrentElement(null);
-        return;
+        console.warn("Socket not connected, drawing not sent to server")
+        setIsDrawing(false)
+        setCurrentElement(null)
+        return
       }
-      
+
       // Emit draw event to socket server
       if (sessionId) {
-        console.log('Emitting draw event to server:', {
+        console.log("Emitting draw event to server:", {
           sessionId,
-          drawData: currentElement
-        });
-        
+          drawData: currentElement,
+        })
+
         if (currentElement.type === "pen") {
-          socket.emit('draw', {
+          socket.emit("draw", {
             sessionId,
             drawData: {
               type: currentElement.type,
               points: currentElement.points,
               color: currentElement.color,
               thickness: lineWidth,
-            }
-          });
+            },
+          })
         } else if (currentElement.type === "square" || currentElement.type === "circle") {
-          socket.emit('draw', {
+          socket.emit("draw", {
             sessionId,
             drawData: {
               type: currentElement.type,
@@ -371,178 +452,95 @@ export default function Whiteboard() {
               endY: currentElement.endY,
               color: currentElement.color,
               thickness: lineWidth,
-            }
-          });
+            },
+          })
         }
       } else {
-        console.warn('Not emitting draw event - no session ID');
+        console.warn("Not emitting draw event - no session ID")
       }
-      
-      setCurrentElement(null);
+
+      setCurrentElement(null)
     }
-    
-    setIsDrawing(false);
-  };
+
+    setIsDrawing(false)
+  }
 
   const handleZoomIn = () => {
-    setZoom((prev) => Math.min(prev + 25, 200));
-  };
+    setZoom((prev) => Math.min(prev + 25, 200))
+  }
 
   const handleZoomOut = () => {
-    setZoom((prev) => Math.max(prev - 25, 25));
-  };
+    setZoom((prev) => Math.max(prev - 25, 25))
+  }
 
   const handleUndo = () => {
     // Check socket connection before emitting
     if (socket.connected && sessionId && userId) {
       // Send undo request to server
-      socket.emit('undo', {
+      socket.emit("undo", {
         sessionId,
         userId,
-      });
+      })
     } else if (elements.length > 0) {
       // Local fallback if not connected
-      setElements(elements.slice(0, -1));
+      setElements(elements.slice(0, -1))
     }
-  };
-  
+  }
+
   const handleRedo = () => {
     // Check socket connection before emitting
     if (socket.connected && sessionId && userId) {
       // Send redo request to server
-      socket.emit('redo', {
+      socket.emit("redo", {
         sessionId,
         userId,
-      });
+      })
     }
-  };
+  }
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Check for Ctrl+Z or Command+Z
       if ((e.ctrlKey || e.metaKey) && e.key === "z") {
-        e.preventDefault();
-        handleUndo();
+        e.preventDefault()
+        handleUndo()
       }
-      
+
       // Check for Ctrl+Y or Command+Y
       if ((e.ctrlKey || e.metaKey) && e.key === "y") {
-        e.preventDefault();
-        handleRedo();
+        e.preventDefault()
+        handleRedo()
       }
-    };
+    }
 
-    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown)
 
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [elements, sessionId, userId]);
+      window.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [elements, sessionId, userId])
 
   // Attempt to reconnect socket if needed
   const attemptReconnect = () => {
-    console.log("Attempting to reconnect socket...");
+    console.log("Attempting to reconnect socket...")
     if (!socket.connected) {
-      socket.connect();
+      socket.connect()
     }
-  };
-
-  const createSession = async () => {
-    try {
-      const response = await fetch('http://127.0.0.1:5000/api/rooms/create', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-        },
-      });
-  
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('Failed to create session:', errorData.message || response.statusText);
-        throw new Error(errorData.message || 'Failed to create session');
-      }
-  
-      const data = await response.json();
-      localStorage.setItem('sessionId', data.sessionId);
-      localStorage.setItem('userId', data.userId || (data.user && data.user._id));
-      console.log('Session created:', data);
-      setJoinLink(data.joinLink);
-      setSessionId(data.sessionId);
-      
-      // Set user ID from response or use a temporary one
-      const newUserId = data.userId || (data.user && data.user._id) || `temp-${Date.now()}`;
-      setUserId(newUserId);
-  
-      // Make sure socket is connected
-      if (!socket.connected) {
-        socket.connect();
-        
-        // Wait for connection before joining room
-        socket.once('connect', () => {
-          socket.emit('join_room', {
-            sessionId: data.sessionId,
-            userId: newUserId,
-          });
-          console.log(`Joined room ${data.sessionId} as ${newUserId}`);
-        });
-      } else {
-        // Join the socket room immediately if connected
-        socket.emit('join_room', {
-          sessionId: data.sessionId,
-          userId: newUserId,
-        });
-        console.log(`Joined room ${data.sessionId} as ${newUserId}`);
-      }
-  
-    } catch (error) {
-      console.error('Error creating session:', error.message);
-      // Create a temporary session ID for local testing
-      const tempSessionId = `local-${Date.now()}`;
-      const tempUserId = `user-${Date.now()}`;
-      setSessionId(tempSessionId);
-      setUserId(tempUserId);
-      setJoinLink(`http://localhost:3000/board/${tempSessionId}`);
-      
-      // Join temporary room if socket is connected
-      if (socket.connected) {
-        socket.emit('join_room', {
-          sessionId: tempSessionId,
-          userId: tempUserId,
-        });
-      }
-    }
-  };
-
-  // Run createSession on component mount
-  useEffect(() => {
-    createSession();
-    
-    // Clean up function
-    return () => {
-      // Don't disconnect entirely as socket might be used elsewhere
-      if (sessionId && userId && socket.connected) {
-        socket.emit('leave_room', {
-          sessionId,
-          userId
-        });
-      }
-    };
-  }, []);
+  }
 
   const handleShareClick = () => {
     if (joinLink) {
-      navigator.clipboard.writeText(joinLink);
-      alert('Join link copied to clipboard!');
+      navigator.clipboard.writeText(joinLink)
+      alert("Join link copied to clipboard!")
     } else {
-      alert('Join link not available yet. Please try again in a moment.');
+      alert("Join link not available yet. Please try again in a moment.")
     }
-  };
+  }
 
   const handleDownloadClick = () => {
     // Example implementation for downloading the canvas as an image
-    alert('Download functionality coming soon!');
-  };
+    alert("Download functionality coming soon!")
+  }
 
   return (
     <div className="h-full w-full overflow-hidden">
@@ -574,12 +572,7 @@ export default function Whiteboard() {
 
               return (
                 <svg key={index} className="absolute top-0 left-0 w-full h-full pointer-events-none">
-                  <path 
-                    d={pathData} 
-                    stroke={element.color} 
-                    strokeWidth={element.thickness || 2} 
-                    fill="none" 
-                  />
+                  <path d={pathData} stroke={element.color} strokeWidth={element.thickness || 2} fill="none" />
                 </svg>
               )
             } else if (
@@ -726,9 +719,10 @@ export default function Whiteboard() {
             <MessageCircle className="w-4 h-4" />
           </button>
           <button className="px-3 py-1 text-sm border rounded hover:bg-gray-50">Present</button>
-          <button 
-            className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700" 
-            onClick={handleShareClick}>
+          <button
+            className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+            onClick={handleShareClick}
+          >
             Share
           </button>
         </div>
@@ -811,43 +805,38 @@ export default function Whiteboard() {
 
         {/* Undo/Redo */}
         <div className="absolute top-20 left-4 flex items-center gap-2 bg-white rounded-md shadow p-1">
-          <button 
-            className="p-1 hover:bg-gray-100 rounded" 
-            onClick={handleUndo}
-          >
+          <button className="p-1 hover:bg-gray-100 rounded" onClick={handleUndo}>
             <Undo className={`w-5 h-5 ${elements.length === 0 ? "text-gray-300" : ""}`} />
           </button>
-          <button 
-            className="p-1 hover:bg-gray-100 rounded" 
-            onClick={handleRedo}
-          >
+          <button className="p-1 hover:bg-gray-100 rounded" onClick={handleRedo}>
             <Redo className="w-5 h-5" />
           </button>
         </div>
-        
+
         {/* Connection status indicator with reconnect button */}
         <div className="absolute bottom-20 left-4 bg-white px-2 py-1 rounded-md shadow text-sm flex items-center gap-2">
-          {socketConnected ? 
+          {socketConnected ? (
             <span className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-green-500"></span> Connected
-            </span> : 
+            </span>
+          ) : (
             <>
               <span className="flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full bg-red-500"></span> Disconnected
               </span>
-              <button 
+              <button
                 className="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600"
                 onClick={attemptReconnect}
               >
                 Reconnect
               </button>
             </>
-          }
+          )}
         </div>
-        
-        {/* Debug info */}
+
+        {/* Room code info */}
         <div className="absolute bottom-28 left-4 bg-white px-2 py-1 rounded-md shadow text-xs">
-          Session ID: {sessionId || 'None'}
+          Room Code: {roomCode || "None"}
         </div>
       </div>
     </div>

@@ -20,6 +20,9 @@ app.use(cors());
 app.use(express.json());
 
 // Routes
+app.use('/api/auth', require('./api/auth/routes'));
+app.use('/api/rooms', require('./api/rooms/routes'));
+app.use('/api/board', require('./api/board/getboardstate'));
 try {
   app.use('/api/auth', require('./api/auth/routes'));
   console.log('Auth routes loaded successfully');
