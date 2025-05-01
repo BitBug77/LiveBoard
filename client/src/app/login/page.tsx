@@ -1,30 +1,34 @@
 'use client';
 import { useState } from 'react';
-import { User, Lock, AlertCircle, CheckCircle } from 'lucide-react';
+import { Mail, Lock, AlertCircle, CheckCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+
 export default function LoginForm() {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
-    const router = useRouter();
+  const router = useRouter();
   
   // Validation states
-  const [usernameError, setUsernameError] = useState('');
+  const [emailError, setEmailError] = useState('');
   const [passwordError, setPasswordError] = useState('');
 
-  const validateUsername = (value:any) => {
+  const validateEmail = (value: string) => {
     if (!value.trim()) {
-      setUsernameError('Username is required');
+      setEmailError('Email is required');
+      return false;
+    } else if (!/\S+@\S+\.\S+/.test(value)) {
+      setEmailError('Please enter a valid email address');
       return false;
     } else {
-      setUsernameError('');
+      setEmailError('');
       return true;
     }
   };
 
-  const validatePassword = (value:any) => {
+  const validatePassword = (value: string) => {
     if (!value.trim()) {
       setPasswordError('Password is required');
       return false;
@@ -34,26 +38,26 @@ export default function LoginForm() {
     }
   };
 
-  const handleUsernameChange = (e:any) => {
+  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
-    setUsername(value);
-    validateUsername(value);
+    setEmail(value);
+    validateEmail(value);
   };
 
-  const handlePasswordChange = (e:any) => {
+  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setPassword(value);
     validatePassword(value);
   };
 
-  const handleSubmit = async (e:any) => {
+  const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     
     // Validate all fields
-    const isUsernameValid = validateUsername(username);
+    const isEmailValid = validateEmail(email);
     const isPasswordValid = validatePassword(password);
     
-    if (!isUsernameValid || !isPasswordValid) {
+    if (!isEmailValid || !isPasswordValid) {
       return;
     }
     
@@ -67,29 +71,29 @@ export default function LoginForm() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          username,
+          email,
           password,
         }),
       });
       
       const data = await response.json();
-      
+      console.log(data);
       if (!response.ok) {
         throw new Error(data.message || 'Login failed');
       }
       
       // Save token to local storage
-      if (data.token) {
-        localStorage.setItem('authToken', data.token);
+      if (data.accessToken) {
+        localStorage.setItem('authToken', data.accessToken);
         setSuccess(true);
-        
+      
         // You could redirect the user here or show a success message
         console.log('Login successful!');
         router.push('/whiteboard'); // Redirect to dashboard or another page
       } else {
         throw new Error('No token received from server');
       }
-    } catch (err) {
+    } catch (err: any) {
       setError(err.message || 'Failed to login. Please try again.');
     } finally {
       setIsLoading(false);
@@ -122,21 +126,21 @@ export default function LoginForm() {
           <div className="space-y-1">
             <div className="relative">
               <div className="absolute left-3 top-3 text-gray-500">
-                <User size={20} />
+                <Mail size={20} />
               </div>
               <input
-                type="text"
-                placeholder="Username"
+                type="email"
+                placeholder="Email"
                 className={`w-full pl-10 pr-4 py-3 rounded-full border ${
-                  usernameError ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-white'
+                  emailError ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-white'
                 } focus:outline-none focus:ring-2 focus:ring-[#716db0] focus:border-transparent`}
-                value={username}
-                onChange={handleUsernameChange}
-                onBlur={() => validateUsername(username)}
+                value={email}
+                onChange={handleEmailChange}
+                onBlur={() => validateEmail(email)}
               />
             </div>
-            {usernameError && (
-              <p className="text-red-600 text-sm ml-4">{usernameError}</p>
+            {emailError && (
+              <p className="text-red-600 text-sm ml-4">{emailError}</p>
             )}
           </div>
           

@@ -57,11 +57,11 @@ exports.registerUser = async (req, res) => {
     await user.save();
     console.log('Refresh token stored in user document');
 
-    // Create verification URL - make sure the token is properly included
-    const verificationUrl = `${config.clientUrl}/verify-email/${verificationToken}`;
+    // Create verification URL - direct to server endpoint
+    const verificationUrl = `${config.serverUrl}/api/auth/verify/${verificationToken}`;
     
     // Debug logging to verify URL and token
-    console.log('Config client URL:', config.clientUrl);
+    console.log('Config server URL:', config.serverUrl);
     console.log('Full verification URL:', verificationUrl);
     console.log('Token in URL:', verificationToken);
 
@@ -198,7 +198,8 @@ exports.verifyEmail = async (req, res) => {
     // Check if token is valid
     if (!user) {
       console.log('Invalid or expired verification token');
-      return res.status(400).json({ message: 'Invalid or expired verification token' });
+      // Redirect to client-side error page with reason
+      return res.redirect(`${config.clientUrl}/auth/verification-failed?reason=invalid`);
     }
 
     console.log('Found user for verification:', user.email);
@@ -211,10 +212,12 @@ exports.verifyEmail = async (req, res) => {
     
     console.log('User email verified successfully:', user.email);
 
-    res.status(200).json({ message: 'Email verified successfully. You can now log in.' });
+    // Redirect to client-side success page
+    return res.redirect(`${config.clientUrl}/auth/verification-success`);
   } catch (error) {
     console.error('Email verification error:', error);
-    res.status(500).json({ message: 'Server error during email verification', error: error.message });
+    // Redirect to client-side error page with reason
+    return res.redirect(`${config.clientUrl}/auth/verification-failed?reason=server-error`);
   }
 };
 
@@ -254,8 +257,8 @@ exports.resendVerificationEmail = async (req, res) => {
     await user.save();
     console.log('Updated user with new verification token:', verificationToken);
 
-    // Create verification URL with explicit token
-    const verificationUrl = `${config.clientUrl}/verify-email/${verificationToken}`;
+    // Create verification URL with direct server endpoint
+    const verificationUrl = `${config.serverUrl}/api/auth/verify/${verificationToken}`;
     console.log('New verification URL:', verificationUrl);
 
     // Email content with improved HTML formatting and explicit token display
@@ -391,8 +394,8 @@ exports.forgotPassword = async (req, res) => {
     await user.save();
     console.log('Updated user with reset token');
 
-    // Create reset URL with explicit token
-    const resetUrl = `${config.clientUrl}/reset-password/${resetToken}`;
+    // Create reset URL with direct server endpoint
+    const resetUrl = `${config.serverUrl}/api/auth/reset-password/${resetToken}`;
     console.log('Reset URL with token:', resetUrl);
 
     // Email content with improved HTML formatting and explicit token display
@@ -437,14 +440,51 @@ exports.forgotPassword = async (req, res) => {
   }
 };
 
-// @desc    Reset password
+// @desc    Reset password (GET request to handle email link)
+// @route   GET /api/auth/reset-password/:token
+// @access  Public
+exports.handleResetPasswordEmail = async (req, res) => {
+  try {
+    // Get token from params
+    const { token } = req.params;
+    console.log('Password reset link clicked with token:', token);
+    
+    // Get hashed token
+    const resetPasswordToken = crypto
+      .createHash('sha256')
+      .update(token)
+      .digest('hex');
+
+    // Find user by reset token and check if token is expired
+    const user = await User.findOne({
+      resetPasswordToken,
+      resetPasswordExpire: { $gt: Date.now() }
+    });
+
+    // Check if token is valid
+    if (!user) {
+      console.log('Invalid or expired reset token');
+      // Redirect to client-side reset password page with error parameter
+      return res.redirect(`${config.clientUrl}/auth/reset-password-form?token=${token}&valid=false`);
+    }
+
+    // If token is valid, redirect to client-side reset password form with valid token
+    return res.redirect(`${config.clientUrl}/auth/reset-password-form?token=${token}&valid=true`);
+  } catch (error) {
+    console.error('Reset password link error:', error);
+    // Redirect to client with error parameter
+    return res.redirect(`${config.clientUrl}/auth/reset-password-error?reason=server-error`);
+  }
+};
+
+// @desc    Reset password (PUT request to update password)
 // @route   PUT /api/auth/reset-password/:token
 // @access  Public
 exports.resetPassword = async (req, res) => {
   try {
     // Get token from params
     const { token } = req.params;
-    console.log('Password reset attempt with token:', token);
+    console.log('Password reset submission with token:', token);
     
     // Get hashed token
     const resetPasswordToken = crypto
@@ -525,8 +565,8 @@ exports.getVerificationLink = async (req, res) => {
       return res.status(400).json({ message: 'No verification pending for this user' });
     }
     
-    // Create verification URL
-    const verificationUrl = `${config.clientUrl}/verify-email/${user.verificationToken}`;
+    // Create verification URL (now using serverUrl)
+    const verificationUrl = `${config.serverUrl}/api/auth/verify/${user.verificationToken}`;
     
     // Return verification info
     return res.status(200).json({
