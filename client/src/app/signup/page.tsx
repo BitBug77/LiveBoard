@@ -17,7 +17,7 @@ export default function SignupForm() {
   const [usernameError, setUsernameError] = useState('');
   const [passwordError, setPasswordError] = useState('');
 
-  const validateEmail = (value:any) => {
+  const validateEmail = (value: string) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!value.trim()) {
       setEmailError('Email is required');
@@ -31,7 +31,7 @@ export default function SignupForm() {
     }
   };
 
-  const validateUsername = (value:any) => {
+  const validateUsername = (value: string) => {
     if (!value.trim()) {
       setUsernameError('Username is required');
       return false;
@@ -44,7 +44,7 @@ export default function SignupForm() {
     }
   };
 
-  const validatePassword = (value:any) => {
+  const validatePassword = (value: string) => {
     if (!value.trim()) {
       setPasswordError('Password is required');
       return false;
@@ -57,25 +57,25 @@ export default function SignupForm() {
     }
   };
 
-  const handleEmailChange = (e:any) => {
+  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setEmail(value);
     validateEmail(value);
   };
 
-  const handleUsernameChange = (e:any) => {
+  const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setUsername(value);
     validateUsername(value);
   };
 
-  const handlePasswordChange = (e:any) => {
+  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setPassword(value);
     validatePassword(value);
   };
 
-  const handleSubmit = async (e:any) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
     // Validate all fields
@@ -121,7 +121,7 @@ export default function SignupForm() {
         throw new Error('No token received from server');
       }
     } catch (err) {
-      setError(err.message || 'Failed to register. Please try again.');
+      setError(err instanceof Error ? err.message : 'Failed to register. Please try again.');
     } finally {
       setIsLoading(false);
     }

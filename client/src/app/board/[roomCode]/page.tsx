@@ -30,7 +30,7 @@ export default function BoardPage() {
         }
       } catch (err) {
         console.error("Error fetching board data:", err)
-        setError(err.message || "Failed to load board data")
+        setError(err instanceof Error ? err.message : "Failed to load board data")
       } finally {
         setLoading(false)
       }

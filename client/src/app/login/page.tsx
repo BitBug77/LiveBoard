@@ -93,8 +93,12 @@ export default function LoginForm() {
       } else {
         throw new Error('No token received from server');
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to login. Please try again.');
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setError(err.message || 'Failed to login. Please try again.');
+      } else {
+        setError('Failed to login. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -181,7 +185,7 @@ export default function LoginForm() {
         
         <div className="text-center mt-6">
           <p className="text-gray-700">
-            Don't have an account? 
+            Don&apos;t have an account? 
             <a href="signup" className="text-[#716db0] font-medium ml-1 hover:text-[#615ca0]">Sign Up</a>
           </p>
         </div>

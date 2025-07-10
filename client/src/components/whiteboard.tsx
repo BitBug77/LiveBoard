@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { io } from "socket.io-client"
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import {
   Pencil,
   Square,
@@ -36,15 +36,60 @@ type DrawingElement = {
   timestamp?: string
 }
 
+type TextElement = {
+  _id?: string
+  id?: string
+  x?: number
+  y?: number
+  startX?: number
+  startY?: number
+  content?: string
+  text?: string
+  color?: string
+}
+
 type BoardData = {
   drawings: DrawingElement[]
-  texts: any[]
+  texts: TextElement[]
   lastUpdated: string
 }
 
 interface WhiteboardProps {
   initialBoardData: BoardData | null
   roomCode: string
+}
+
+// Socket event types
+interface SocketBoardState {
+  drawings?: DrawingElement[]
+  texts?: TextElement[]
+}
+
+interface SocketDrawData {
+  type: Tool
+  points?: { x: number; y: number }[]
+  startX?: number
+  startY?: number
+  endX?: number
+  endY?: number
+  color: string
+  thickness?: number
+}
+
+interface SocketTextData {
+  id: string
+  x: number
+  y: number
+  content: string
+  color: string
+}
+
+interface SocketError {
+  message: string
+}
+
+interface SocketUserJoined {
+  userId: string
 }
 
 // Create socket outside component to avoid recreation on renders
@@ -65,7 +110,6 @@ export default function Whiteboard({ initialBoardData, roomCode }: WhiteboardPro
   const [currentElement, setCurrentElement] = useState<DrawingElement | null>(null)
   const [zoom, setZoom] = useState(100)
   const canvasRef = useRef<HTMLDivElement>(null)
-  const [title, setTitle] = useState("Whiteboard")
   const [joinLink, setJoinLink] = useState("")
   const [sessionId, setSessionId] = useState("")
   const [userId, setUserId] = useState("")
@@ -92,7 +136,7 @@ export default function Whiteboard({ initialBoardData, roomCode }: WhiteboardPro
       if (initialBoardData.texts && Array.isArray(initialBoardData.texts)) {
         initialBoardData.texts.forEach((text) => {
           processedElements.push({
-            id: text._id,
+            id: text._id || text.id,
             type: "text",
             startX: text.startX || text.x,
             startY: text.startY || text.y,
@@ -135,7 +179,7 @@ export default function Whiteboard({ initialBoardData, roomCode }: WhiteboardPro
       setSocketConnected(false)
     }
 
-    function onConnectError(error: any) {
+    function onConnectError(error: Error) {
       console.error("Socket connection error:", error)
       setSocketConnected(false)
     }
@@ -177,12 +221,12 @@ export default function Whiteboard({ initialBoardData, roomCode }: WhiteboardPro
         })
       }
     }
-  }, [roomCode])
+  }, [roomCode, userId])
 
   // Handle socket events for real-time updates
   useEffect(() => {
     // Listen for board state updates from server
-    function handleBoardState(boardState: any) {
+    function handleBoardState(boardState: SocketBoardState) {
       console.log("Received board state:", boardState)
 
       // Process and set elements from board state
@@ -190,7 +234,7 @@ export default function Whiteboard({ initialBoardData, roomCode }: WhiteboardPro
 
       // Process drawings
       if (boardState.drawings && Array.isArray(boardState.drawings)) {
-        boardState.drawings.forEach((drawing: any) => {
+        boardState.drawings.forEach((drawing: DrawingElement) => {
           newElements.push({
             ...drawing,
             type: (drawing.type as Tool) || "pen",
@@ -201,7 +245,7 @@ export default function Whiteboard({ initialBoardData, roomCode }: WhiteboardPro
 
       // Process text elements
       if (boardState.texts && Array.isArray(boardState.texts)) {
-        boardState.texts.forEach((textData: any) => {
+        boardState.texts.forEach((textData: TextElement) => {
           newElements.push({
             id: textData.id || textData._id,
             type: "text",
@@ -217,7 +261,7 @@ export default function Whiteboard({ initialBoardData, roomCode }: WhiteboardPro
     }
 
     // Listen for new drawings from other users
-    function handleDraw(drawData: any) {
+    function handleDraw(drawData: SocketDrawData) {
       console.log("Received draw event:", drawData)
       setElements((prev) => [
         ...prev,
@@ -230,7 +274,7 @@ export default function Whiteboard({ initialBoardData, roomCode }: WhiteboardPro
     }
 
     // Listen for text updates from other users
-    function handleText(textData: any) {
+    function handleText(textData: SocketTextData) {
       console.log("Received text event:", textData)
       setElements((prev) => [
         ...prev,
@@ -246,13 +290,13 @@ export default function Whiteboard({ initialBoardData, roomCode }: WhiteboardPro
     }
 
     // Listen for errors
-    function handleError(error: any) {
+    function handleError(error: SocketError) {
       console.error("Socket error:", error)
       alert(`Error: ${error.message}`)
     }
 
     // Listen for user joined events
-    function handleUserJoined(data: { userId: string }) {
+    function handleUserJoined(data: SocketUserJoined) {
       console.log(`User ${data.userId} joined the session`)
       // You could show a notification or update UI here
     }
@@ -277,7 +321,7 @@ export default function Whiteboard({ initialBoardData, roomCode }: WhiteboardPro
   // Track cursor position and emit to others - using debounce to reduce network traffic
   const cursorMoveTimeoutRef = useRef<number | null>(null)
 
-  const handleCursorMove = (e: React.MouseEvent) => {
+  const handleCursorMove = useCallback((e: React.MouseEvent) => {
     if (!canvasRef.current || !sessionId || !userId) return
 
     // Clear previous timeout
@@ -305,10 +349,10 @@ export default function Whiteboard({ initialBoardData, roomCode }: WhiteboardPro
         },
       })
     }, 60)
-  }
+  }, [sessionId, userId, zoom])
 
   // Handle mouse down for drawing
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (!canvasRef.current) return
 
     const rect = canvasRef.current.getBoundingClientRect()
@@ -349,7 +393,7 @@ export default function Whiteboard({ initialBoardData, roomCode }: WhiteboardPro
         }
 
         // Add to local state
-        setElements([...elements, newElement])
+        setElements((prev) => [...prev, newElement])
 
         // Check socket connection before emitting
         if (!socket.connected) {
@@ -385,9 +429,9 @@ export default function Whiteboard({ initialBoardData, roomCode }: WhiteboardPro
         }
       }
     }
-  }
+  }, [tool, color, lineWidth, sessionId, zoom])
 
-  const handleMouseMove = (e: React.MouseEvent) => {
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
     // Handle cursor tracking for all users
     handleCursorMove(e)
 
@@ -409,12 +453,12 @@ export default function Whiteboard({ initialBoardData, roomCode }: WhiteboardPro
         endY: y,
       })
     }
-  }
+  }, [isDrawing, currentElement, tool, zoom, handleCursorMove])
 
-  const handleMouseUp = () => {
+  const handleMouseUp = useCallback(() => {
     if (isDrawing && currentElement) {
       // Add the current element to local state
-      setElements([...elements, currentElement])
+      setElements((prev) => [...prev, currentElement])
 
       // Check socket connection before emitting
       if (!socket.connected) {
@@ -463,17 +507,17 @@ export default function Whiteboard({ initialBoardData, roomCode }: WhiteboardPro
     }
 
     setIsDrawing(false)
-  }
+  }, [isDrawing, currentElement, sessionId, lineWidth])
 
-  const handleZoomIn = () => {
+  const handleZoomIn = useCallback(() => {
     setZoom((prev) => Math.min(prev + 25, 200))
-  }
+  }, [])
 
-  const handleZoomOut = () => {
+  const handleZoomOut = useCallback(() => {
     setZoom((prev) => Math.max(prev - 25, 25))
-  }
+  }, [])
 
-  const handleUndo = () => {
+  const handleUndo = useCallback(() => {
     // Check socket connection before emitting
     if (socket.connected && sessionId && userId) {
       // Send undo request to server
@@ -481,13 +525,13 @@ export default function Whiteboard({ initialBoardData, roomCode }: WhiteboardPro
         sessionId,
         userId,
       })
-    } else if (elements.length > 0) {
+    } else {
       // Local fallback if not connected
-      setElements(elements.slice(0, -1))
+      setElements((prev) => prev.slice(0, -1))
     }
-  }
+  }, [sessionId, userId])
 
-  const handleRedo = () => {
+  const handleRedo = useCallback(() => {
     // Check socket connection before emitting
     if (socket.connected && sessionId && userId) {
       // Send redo request to server
@@ -496,7 +540,7 @@ export default function Whiteboard({ initialBoardData, roomCode }: WhiteboardPro
         userId,
       })
     }
-  }
+  }, [sessionId, userId])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -518,29 +562,29 @@ export default function Whiteboard({ initialBoardData, roomCode }: WhiteboardPro
     return () => {
       window.removeEventListener("keydown", handleKeyDown)
     }
-  }, [elements, sessionId, userId])
+  }, [handleUndo, handleRedo])
 
   // Attempt to reconnect socket if needed
-  const attemptReconnect = () => {
+  const attemptReconnect = useCallback(() => {
     console.log("Attempting to reconnect socket...")
     if (!socket.connected) {
       socket.connect()
     }
-  }
+  }, [])
 
-  const handleShareClick = () => {
+  const handleShareClick = useCallback(() => {
     if (joinLink) {
       navigator.clipboard.writeText(joinLink)
       alert("Join link copied to clipboard!")
     } else {
       alert("Join link not available yet. Please try again in a moment.")
     }
-  }
+  }, [joinLink])
 
-  const handleDownloadClick = () => {
+  const handleDownloadClick = useCallback(() => {
     // Example implementation for downloading the canvas as an image
     alert("Download functionality coming soon!")
-  }
+  }, [])
 
   return (
     <div className="h-full w-full overflow-hidden">
@@ -805,8 +849,12 @@ export default function Whiteboard({ initialBoardData, roomCode }: WhiteboardPro
 
         {/* Undo/Redo */}
         <div className="absolute top-20 left-4 flex items-center gap-2 bg-white rounded-md shadow p-1">
-          <button className="p-1 hover:bg-gray-100 rounded" onClick={handleUndo}>
-            <Undo className={`w-5 h-5 ${elements.length === 0 ? "text-gray-300" : ""}`} />
+          <button 
+            className="p-1 hover:bg-gray-100 rounded disabled:opacity-50 disabled:cursor-not-allowed" 
+            onClick={handleUndo}
+            disabled={elements.length === 0}
+          >
+            <Undo className="w-5 h-5" />
           </button>
           <button className="p-1 hover:bg-gray-100 rounded" onClick={handleRedo}>
             <Redo className="w-5 h-5" />
